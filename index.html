@@ -5,6 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Калькулятор эффективности и лидерства — Neo</title>
   <style>
+  /* Когда страница во фрейме — убираем крупную «шапку»
+   и добавляем отступ снизу, чтобы кнопку Bitrix не накрывало */
+.is-embed .site-header { display:none; }
+.is-embed .container { padding-bottom: 100px; }
+
+/* На всякий: прозрачный фон, чтобы не было белых «полей» вокруг */
+html, body { background-clip: border-box; }
+
     /* ==========================
        Neo UI — youth + innovation
        ========================== */
@@ -917,6 +925,39 @@
     autosaveInit();
     makeSectionsCollapsibleIfMobile();
     window.addEventListener('resize', makeSectionsCollapsibleIfMobile);
+    // === EMBED/IFRAME: автоподстройка высоты ===
+(function(){
+  // помечаем «режим встраивания» (страница не в топ-окне)
+  const isEmbed = (window.self !== window.top);
+  if(isEmbed){ document.documentElement.classList.add('is-embed'); }
+
+  // шлём высоту родителю (Bitrix-странице)
+  function postHeight(){
+    // берём «наивысшую» из вариантов, чтобы точно покрыть контент
+    const h = Math.max(
+      document.body.scrollHeight,
+      document.documentElement.scrollHeight,
+      document.body.offsetHeight,
+      document.documentElement.offsetHeight,
+      document.body.clientHeight,
+      document.documentElement.clientHeight
+    );
+    // можно указать конкретный origin вместо '*', если известно
+    window.parent.postMessage({ type:'kpi_calc_height', height:h }, '*');
+  }
+
+  // при загрузке + при любых изменениях верстки
+  window.addEventListener('load', postHeight);
+  window.addEventListener('resize', postHeight);
+  new MutationObserver(postHeight).observe(document.body, {childList:true,subtree:true,attributes:true});
+  if('ResizeObserver' in window){
+    new ResizeObserver(postHeight).observe(document.documentElement);
+  }
+
+  // на всякий — переотправка через таймауты (случай медленной отрисовки)
+  setTimeout(postHeight, 300);
+  setTimeout(postHeight, 1000);
+})();
   </script>
 </body>
 </html>
