@@ -480,7 +480,7 @@ html, body { background-clip: border-box; }
       list.forEach((v, i)=>{
         const tr = document.createElement('tr');
         tr.innerHTML = `<td>${v.name}</td>
-          <td><input type="number" min="0" step="1" data-viol-idx="${i}" style="width:120px"></td>
+          <td><input type="number" min="0" step="any" value="0" data-viol-idx="${i}" style="width:120px"></td>
           <td><span class="pill">-${v.weight}</span></td>`;
         tbody.appendChild(tr);
       });
@@ -496,8 +496,7 @@ html, body { background-clip: border-box; }
         div.appendChild(tbl);
       }
 
-      // Убираем нули из полей нарушений после рендера
-      stripZerosInViolations();
+      ensureViolationDefaults();
     }
 
     // ===== Примечание под БЮ =====
@@ -621,13 +620,23 @@ html, body { background-clip: border-box; }
       $('#teamIndexWrap').style.display = (bu==='ФК' && role==='Директор Производства') ? '' : 'none';
     }
 
-    // ===== Убираем нули из нарушений =====
-    function stripZerosInViolations(){
+    // ===== Значения нарушений по умолчанию =====
+    function ensureViolationDefaults(){
       document
         .querySelectorAll('#violations-wrap input[type="number"][data-viol-idx]')
         .forEach(el=>{
-          if(el.value === '0') el.value = '';
-          el.placeholder = '0';
+          if(el.value === '' || el.value == null){
+            el.value = '0';
+          }
+          if(!el.dataset.violationHandler){
+            el.addEventListener('blur', ()=>{
+              if(el.value === '' || el.value == null){
+                el.value = '0';
+                validateField(el);
+              }
+            });
+            el.dataset.violationHandler = '1';
+          }
         });
     }
 
@@ -716,8 +725,7 @@ html, body { background-clip: border-box; }
         if(data.resultsVisible) document.getElementById('results').classList.remove('hidden');
         if(data.extraVisible) document.getElementById('bk-extra').classList.remove('hidden');
 
-        // очищаем нули, которые могли прийти из localStorage
-        stripZerosInViolations();
+        ensureViolationDefaults();
       });
     }
     function autosaveInit(){
@@ -740,7 +748,11 @@ html, body { background-clip: border-box; }
   // проценты: разрешаем любые значения ≥ 0
   percent: (v)=> v==='' || v==null || (isFinite(v) && v>=0),
   // для нарушений: требуем число ≥0 и поле не может быть пустым
-  positiveInt: (v)=> (/^\d+$/.test(String(v)) && Number(v)>=0),
+  positiveNumber: (v)=>{
+    if(v==='' || v==null) return false;
+    const n = Number(String(v).replace(',', '.'));
+    return Number.isFinite(n) && n>=0;
+  },
   // ассессмент: целые 0–3
   assess: (v)=>{
     if (v==='' || v==null) return true;
@@ -772,8 +784,8 @@ html, body { background-clip: border-box; }
         ok = VALID.assess(valRaw);
         if(!ok) text = 'Балл индекса команды должен быть целым числом 0–3';
       } else if(el.hasAttribute('data-viol-idx')){
-        ok = VALID.positiveInt(valRaw);
-        if(!ok) text = 'Заполните поле (целое число ≥ 0)';
+        ok = VALID.positiveNumber(valRaw);
+        if(!ok) text = 'Заполните поле (число ≥ 0)';
       }
       el.classList.toggle('input-error', !ok);
       const msg = ensureErrMsg(el);
