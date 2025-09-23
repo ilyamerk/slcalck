@@ -152,7 +152,7 @@ html, body { background-clip: border-box; }
       background:radial-gradient(circle at 30% 30%,rgba(124,58,237,.24),transparent 60%)}
     .stat .val{font-size:30px;font-weight:900}
     .hint{font-size:12px;color:var(--muted)}
-    .hidden{display:none}
+    .hidden{display:none!important}
 
     /* ===== Custom selects ===== */
     .native-hidden{display:none}
@@ -813,6 +813,13 @@ html, body { background-clip: border-box; }
       else box.textContent = message;
       box.classList.remove('hidden');
       box.setAttribute('aria-hidden','false');
+      const results = document.getElementById('results');
+      if(results){
+        results.classList.add('hidden');
+        if(typeof HTMLDetailsElement !== 'undefined' && results instanceof HTMLDetailsElement){
+          results.open = false;
+        }
+      }
     }
     function hideCalcError(){
       const box = document.getElementById('calcError');
@@ -1003,6 +1010,7 @@ html, body { background-clip: border-box; }
     updateBuNote('');
     mountBUCustom();
     mountRoleCustom();
+    hideCalcError();
 
     // Слушатели
     document.getElementById('bu').addEventListener('change', e=>{
@@ -1046,7 +1054,13 @@ html, body { background-clip: border-box; }
       $('#businessScore').textContent = fmt(biz);
       $('#leadershipScore').textContent = fmt(lead);
       $('#penaltySum').textContent = '-' + fmt(penalty);
-      $('#results').classList.remove('hidden');
+      const resultsEl = $('#results');
+      if(resultsEl){
+        resultsEl.classList.remove('hidden');
+        if(typeof HTMLDetailsElement !== 'undefined' && resultsEl instanceof HTMLDetailsElement){
+          resultsEl.open = true;
+        }
+      }
 
       const extra = $('#bk-extra');
       if(bu==='БК'){
