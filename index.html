@@ -745,21 +745,39 @@ html, body { background-clip: border-box; }
 
     // VALIDATION
     const VALID = {
-  // проценты: разрешаем любые значения ≥ 0
-  percent: (v)=> v==='' || v==null || (isFinite(v) && v>=0),
-  // для нарушений: требуем число ≥0 и поле не может быть пустым
-  positiveNumber: (v)=>{
-    if(v==='' || v==null) return false;
-    const n = Number(String(v).replace(',', '.'));
-    return Number.isFinite(n) && n>=0;
-  },
-  // ассессмент: целые 0–3
-  assess: (v)=>{
-    if (v==='' || v==null) return true;
-    const n = Number(v);
-    return Number.isFinite(n) && Number.isInteger(n) && n>=0 && n<=3;
-  }
-};
+      // проценты: разрешаем любые значения ≥ 0
+      percent: (v)=>{
+        const n = Number(String(v).replace(',', '.'));
+        return Number.isFinite(n) && n>=0;
+      },
+      // для нарушений: требуем число ≥0 и поле не может быть пустым
+      positiveNumber: (v)=>{
+        if(v==='' || v==null) return false;
+        const n = Number(String(v).replace(',', '.'));
+        return Number.isFinite(n) && n>=0;
+      },
+      // ассессмент: целые 0–3
+      assess: (v)=>{
+        if (v==='' || v==null) return true;
+        const n = Number(String(v).replace(',', '.'));
+        return Number.isFinite(n) && Number.isInteger(n) && n>=0 && n<=3;
+      }
+    };
+
+    function isFieldRequired(el){
+      if(!el) return false;
+      if(el.hasAttribute('data-viol-idx')) return true;
+      const id = el.id || '';
+      const buSel = document.getElementById('bu');
+      const roleSel = document.getElementById('role');
+      const bu = buSel ? buSel.value : '';
+      const role = roleSel ? roleSel.value : '';
+      const isFC = bu==='ФК' && FC_ROLES.includes(role);
+      if(['idxQuality','idxTO','idxMP','axio','hr','assess'].includes(id)) return true;
+      if(id==='productivity') return isFC;
+      if(id==='budgetExec' || id==='teamIndex') return bu==='ФК' && role==='Директор Производства';
+      return false;
+    }
     function ensureErrMsg(el){
       let msg = el.parentElement.querySelector('.errmsg');
       if(!msg){
@@ -773,20 +791,35 @@ html, body { background-clip: border-box; }
     function validateField(el){
       const id = el.id || '';
       const valRaw = el.value;
-      let ok = true, text='';
-      if(['idxQuality','idxTO','idxMP','axio','hr','productivity','budgetExec'].includes(id)){
-        ok = VALID.percent(valRaw);
-        if(!ok) text = 'Введите процент от 0 до 150';
-      } else if(id==='assess'){
-        ok = VALID.assess(valRaw);
-        if(!ok) text = 'Ассессмент должен быть в диапазоне 0–3';
-      } else if(id==='teamIndex'){
-        ok = VALID.assess(valRaw);
-        if(!ok) text = 'Балл индекса команды должен быть целым числом 0–3';
-      } else if(el.hasAttribute('data-viol-idx')){
+      const required = isFieldRequired(el);
+      const isViolation = el.hasAttribute('data-viol-idx');
+      const hasValue = !(valRaw==='' || valRaw==null);
+      let ok = true;
+      let text = '';
+
+      if(required && !hasValue){
+        text = isViolation ? 'Заполните поле (число ≥ 0)' : 'Заполните поле';
+        ok = false;
+      } else if(hasValue){
+        if(['idxQuality','idxTO','idxMP','axio','hr','productivity','budgetExec'].includes(id)){
+          ok = VALID.percent(valRaw);
+          if(!ok) text = 'Введите число ≥ 0';
+        } else if(id==='assess'){
+          ok = VALID.assess(valRaw);
+          if(!ok) text = 'Ассессмент должен быть в диапазоне 0–3';
+        } else if(id==='teamIndex'){
+          ok = VALID.assess(valRaw);
+          if(!ok) text = 'Балл индекса команды должен быть целым числом 0–3';
+        } else if(isViolation){
+          ok = VALID.positiveNumber(valRaw);
+          if(!ok) text = 'Введите число ≥ 0';
+        }
+      } else if(isViolation){
+        // на всякий случай — пустые нарушения трактуем как ошибку через обязательность
         ok = VALID.positiveNumber(valRaw);
         if(!ok) text = 'Заполните поле (число ≥ 0)';
       }
+
       el.classList.toggle('input-error', !ok);
       const msg = ensureErrMsg(el);
       msg.textContent = text;
@@ -797,7 +830,16 @@ html, body { background-clip: border-box; }
       const fields = getAllFields();
       const viols = getViolationInputs();
       let ok = true;
-      [...fields, ...viols].forEach(el=>{ if(!validateField(el)) ok=false; });
+      let firstInvalid = null;
+      [...fields, ...viols].forEach(el=>{
+        if(!validateField(el)){
+          ok = false;
+          if(!firstInvalid) firstInvalid = el;
+        }
+      });
+      if(firstInvalid && typeof firstInvalid.focus === 'function'){
+        firstInvalid.focus({preventScroll:false});
+      }
       return ok;
     }
     function attachValidation(){
@@ -810,6 +852,9 @@ html, body { background-clip: border-box; }
       // Guard calculate
       const calcBtn = document.getElementById('calc');
       calcBtn.addEventListener('click', (e)=>{
+        const buVal = document.getElementById('bu')?.value;
+        const roleVal = document.getElementById('role')?.value;
+        if(!buVal || !roleVal) return;
         if(!validateAll()){
           e.stopImmediatePropagation?.();
           e.stopPropagation();
