@@ -197,6 +197,21 @@ html, body { background-clip: border-box; }
     .input-error{border-color:var(--bad)!important; box-shadow:0 0 0 6px rgba(239,68,68,.20), 0 6px 24px rgba(239,68,68,.12)!important;}
     .errmsg{font-size:12px;color:var(--bad);margin-top:6px;display:none}
     .errmsg[aria-hidden="false"]{display:block}
+    .calc-error{
+      margin-top:18px;
+      padding:14px 16px;
+      border-radius:16px;
+      border:1px solid rgba(239,68,68,.35);
+      background:linear-gradient(180deg, rgba(239,68,68,.16), rgba(239,68,68,.08));
+      display:flex;
+      flex-direction:column;
+      gap:4px;
+      font-size:14px;
+      line-height:1.5;
+      color:var(--text);
+      box-shadow:0 10px 24px rgba(239,68,68,.12);
+    }
+    .calc-error-title{font-weight:800;font-size:12px;letter-spacing:.4px;text-transform:uppercase;color:var(--bad)}
 
     .table-scroll{overflow-x:auto; -webkit-overflow-scrolling:touch}
     .table-scroll table{min-width:620px}
@@ -313,6 +328,11 @@ html, body { background-clip: border-box; }
       <div class="btns">
         <button class="primary" id="calc">Рассчитать</button>
         <button class="ghost" id="reset">Сбросить</button>
+      </div>
+
+      <div class="calc-error hidden" id="calcError" role="alert" aria-hidden="true">
+        <div class="calc-error-title">Ошибка расчёта</div>
+        <div id="calcErrorText"></div>
       </div>
 
       <div class="section hidden" id="results">
@@ -778,6 +798,23 @@ html, body { background-clip: border-box; }
       if(id==='budgetExec' || id==='teamIndex') return bu==='ФК' && role==='Директор Производства';
       return false;
     }
+    function showCalcError(message){
+      const box = document.getElementById('calcError');
+      if(!box) return;
+      const textNode = document.getElementById('calcErrorText');
+      if(textNode) textNode.textContent = message;
+      else box.textContent = message;
+      box.classList.remove('hidden');
+      box.setAttribute('aria-hidden','false');
+    }
+    function hideCalcError(){
+      const box = document.getElementById('calcError');
+      if(!box) return;
+      const textNode = document.getElementById('calcErrorText');
+      if(textNode) textNode.textContent = '';
+      box.classList.add('hidden');
+      box.setAttribute('aria-hidden','true');
+    }
     function ensureErrMsg(el){
       let msg = el.parentElement.querySelector('.errmsg');
       if(!msg){
@@ -796,34 +833,38 @@ html, body { background-clip: border-box; }
       const hasValue = !(valRaw==='' || valRaw==null);
       let ok = true;
       let text = '';
+      let errorType = '';
 
       if(required && !hasValue){
         text = isViolation ? 'Заполните поле (число ≥ 0)' : 'Заполните поле';
         ok = false;
+        errorType = 'missing';
       } else if(hasValue){
         if(['idxQuality','idxTO','idxMP','axio','hr','productivity','budgetExec'].includes(id)){
           ok = VALID.percent(valRaw);
-          if(!ok) text = 'Введите число ≥ 0';
+          if(!ok){ text = 'Введите число ≥ 0'; errorType = 'invalid'; }
         } else if(id==='assess'){
           ok = VALID.assess(valRaw);
-          if(!ok) text = 'Ассессмент должен быть в диапазоне 0–3';
+          if(!ok){ text = 'Ассессмент должен быть в диапазоне 0–3'; errorType = 'invalid'; }
         } else if(id==='teamIndex'){
           ok = VALID.assess(valRaw);
-          if(!ok) text = 'Балл индекса команды должен быть целым числом 0–3';
+          if(!ok){ text = 'Балл индекса команды должен быть целым числом 0–3'; errorType = 'invalid'; }
         } else if(isViolation){
           ok = VALID.positiveNumber(valRaw);
-          if(!ok) text = 'Введите число ≥ 0';
+          if(!ok){ text = 'Введите число ≥ 0'; errorType = 'invalid'; }
         }
       } else if(isViolation){
         // на всякий случай — пустые нарушения трактуем как ошибку через обязательность
         ok = VALID.positiveNumber(valRaw);
-        if(!ok) text = 'Заполните поле (число ≥ 0)';
+        if(!ok){ text = 'Заполните поле (число ≥ 0)'; errorType = 'missing'; }
       }
 
       el.classList.toggle('input-error', !ok);
       const msg = ensureErrMsg(el);
       msg.textContent = text;
       msg.setAttribute('aria-hidden', ok ? 'true' : 'false');
+      if(ok){ delete el.dataset.errorType; }
+      else { el.dataset.errorType = errorType || 'invalid'; }
       return ok;
     }
     function validateAll(){
@@ -831,16 +872,21 @@ html, body { background-clip: border-box; }
       const viols = getViolationInputs();
       let ok = true;
       let firstInvalid = null;
+      let hasMissing = false;
+      let hasInvalid = false;
       [...fields, ...viols].forEach(el=>{
         if(!validateField(el)){
           ok = false;
           if(!firstInvalid) firstInvalid = el;
+          const type = el.dataset.errorType;
+          if(type === 'missing') hasMissing = true;
+          else hasInvalid = true;
         }
       });
       if(firstInvalid && typeof firstInvalid.focus === 'function'){
         firstInvalid.focus({preventScroll:false});
       }
-      return ok;
+      return {ok, hasMissing, hasInvalid};
     }
     function attachValidation(){
       document.addEventListener('input', (e)=>{
@@ -854,12 +900,27 @@ html, body { background-clip: border-box; }
       calcBtn.addEventListener('click', (e)=>{
         const buVal = document.getElementById('bu')?.value;
         const roleVal = document.getElementById('role')?.value;
-        if(!buVal || !roleVal) return;
-        if(!validateAll()){
+        if(!buVal || !roleVal){
+          showCalcError('Выберите Бизнес-Юнит и Должность перед расчётом.');
+          return;
+        }
+        const validation = validateAll();
+        if(!validation.ok){
           e.stopImmediatePropagation?.();
           e.stopPropagation();
           e.preventDefault();
-          alert('Проверьте ввод: есть ошибки в полях.');
+          let message;
+          if(validation.hasMissing && validation.hasInvalid){
+            message = 'Заполните все обязательные поля и исправьте значения в полях с ошибками.';
+          } else if(validation.hasMissing){
+            message = 'Заполните все обязательные поля перед расчётом.';
+          } else {
+            message = 'Исправьте значения в полях с ошибками.';
+          }
+          showCalcError(message);
+          alert(`Ошибка расчёта: ${message}`);
+        } else {
+          hideCalcError();
         }
       }, true);
     }
@@ -951,18 +1012,26 @@ html, body { background-clip: border-box; }
       renderViolations(e.target.value);
       configureUI();
       document.getElementById('bk-extra').classList.add('hidden');
+      hideCalcError();
     });
 
     document.getElementById('role').addEventListener('change', ()=>{
       configureUI();
       mountRoleCustom(); // подсветка выбранного в кастоме
+      hideCalcError();
     });
 
     document.getElementById('reset').addEventListener('click', ()=>{ location.reload(); });
 
     document.getElementById('calc').addEventListener('click', ()=>{
       const bu = $('#bu').value; const role = $('#role').value;
-      if(!bu || !role){ alert('Пожалуйста, выберите Бизнес-Юнит и Должность.'); return; }
+      if(!bu || !role){
+        showCalcError('Выберите Бизнес-Юнит и Должность перед расчётом.');
+        alert('Ошибка расчёта: выберите Бизнес-Юнит и Должность.');
+        return;
+      }
+
+      hideCalcError();
 
       const biz = computeBusinessScore(bu);
       const {score:lead, penalty} = computeLeadershipScore();
